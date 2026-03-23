@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IWant3D – Kalkulačka 3D tisku</title>
+<style>
+:root{
+  --bg:#f4f7fb;
+  --card:#ffffff;
+  --text:#1f2937;
+  --muted:#6b7280;
+  --line:#dbe7f3;
+  --blue:#0ea5e9;
+  --blue-soft:#e0f2fe;
+  --blue-dark:#0369a1;
+  --orange:#f97316;
+  --orange-dark:#ea580c;
+  --orange-soft:#fff7ed;
+  --shadow:0 10px 30px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+.wrap{max-width:1280px;margin:auto;padding:22px}
+h1{font-size:32px;margin:0 0 8px}
+.sub{margin:0 0 22px;color:var(--muted);font-size:16px}
+.grid{display:grid;grid-template-columns:1.05fr .95fr;gap:20px;align-items:start}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
+.card-head{padding:22px 22px 0}
+.card-body{padding:20px}
+.card-head h2{margin:0 0 6px;font-size:24px}
+.card-head p{margin:0;color:var(--muted)}
+.viewer-shell{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:linear-gradient(180deg,#0f172a 0%,#020617 100%)}
+#viewer{display:block;width:100%;height:520px}
+.viewer-toolbar{display:flex;gap:10px;flex-wrap:wrap;padding:12px;background:#fff;border-top:1px solid var(--line)}
+.file-label,button{border:0;border-radius:12px;padding:12px 16px;font-size:14px;font-weight:700;cursor:pointer;transition:.2s ease}
+.file-label{display:inline-flex;align-items:center;background:linear-gradient(135deg,var(--orange) 0%,var(--orange-dark) 100%);color:#fff}
+button.primary{background:linear-gradient(135deg,var(--orange) 0%,var(--orange-dark) 100%);color:#fff}
+button.secondary{background:var(--blue-soft);color:var(--blue-dark)}
+button.ghost{background:#f8fafc;color:var(--blue-dark);border:1px solid #dbeafe}
+button:hover,.file-label:hover{transform:translateY(-1px)}
+input[type=file]{display:none}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field{display:flex;flex-direction:column;gap:8px}
+.field label{font-size:14px;font-weight:700}
+input,select{width:100%;padding:14px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--text)}
+.price-box{margin-top:18px;padding:20px;border-radius:18px;background:linear-gradient(135deg,#f0f9ff 0%,#ffffff 55%,#fff7ed 100%);border:1px solid #bae6fd}
+.price-main{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.price-title{font-size:14px;color:var(--blue-dark);font-weight:700}
+.price-value{font-size:52px;line-height:1;font-weight:900;color:var(--orange-dark);margin-top:8px}
+.status{margin-top:16px;padding:12px 14px;border-radius:12px;font-size:14px}
+.status.info{background:var(--blue-soft);color:var(--blue-dark)}
+.status.ok{background:#ecfeff;color:var(--blue-dark)}
+.status.warn{background:var(--orange-soft);color:#9a3412}
+.stats{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat{padding:14px;border:1px solid #dbeafe;border-radius:14px;background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)}
+.stat .k{font-size:12px;color:var(--muted);margin-bottom:6px;text-transform:uppercase}
+.stat .v{font-size:22px;font-weight:800}
+@media (max-width: 980px){.grid,.fields,.stats{grid-template-columns:1fr}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+</head>
+<body>
+
+<script>
+const OWNER={
+machineRate:100,
+margin:0.15,
+setup:80,
+minPrice:400,
+travelFactor:1.08,
+
+nozzles:{
+  0.2:{lineWidth:0.22,maxFlowMul:0.45,minLayer:0.08,maxLayer:0.16,label:'0.2 mm'},
+  0.4:{lineWidth:0.42,maxFlowMul:1.0,minLayer:0.12,maxLayer:0.28,label:'0.4 mm'},
+  0.6:{lineWidth:0.62,maxFlowMul:1.45,minLayer:0.20,maxLayer:0.36,label:'0.6 mm'},
+  0.8:{lineWidth:0.82,maxFlowMul:1.9,minLayer:0.28,maxLayer:0.48,label:'0.8 mm'}
+},
+
+materials:{
+PLA:{density:1.24,price:400,maxFlow:21},
+PLACF:{density:1.30,price:700,maxFlow:14,label:'PLA-CF'},
+PETG:{density:1.28,price:450,maxFlow:12},
+PETGCF:{density:1.25,price:950,maxFlow:10,label:'PETG-CF'},
+ABS:{density:1.05,price:500,maxFlow:16},
+ASA:{density:1.05,price:650,maxFlow:14},
+ASACF:{density:1.02,price:1100,maxFlow:12,label:'ASA-CF'},
+TPU:{density:1.22,price:790,maxFlow:6},
+PETCF:{density:1.29,price:1350,maxFlow:8,label:'PET-CF'}
+}}
+</script>
+
+<div class="wrap">
+<h1>Kalkulačka 3D tisku</h1>
+<p class="sub">Nahraj STL, zvol materiál a spočítej orientační cenu tisku.</p>
+
+<div class="grid">
+<section class="card">
+<div class="card-head"><h2>Náhled STL</h2></div>
+<div class="card-body">
+<div class="viewer-shell"><canvas id="viewer"></canvas>
+<div class="viewer-toolbar">
+<label class="file-label" for="file">Nahrát STL</label>
+<input type="file" id="file" accept=".stl" />
+<button class="secondary" id="resetBtn" type="button">Reset pohledu</button>
+<button class="ghost" id="wireBtn" type="button">Drátěný režim</button>
+</div></div>
+<div id="status" class="status info">Nahraj STL model</div>
+<div class="stats">
+<div class="stat"><div class="k">Rozměry</div><div id="dims" class="v">–</div></div>
+<div class="stat"><div class="k">Objem modelu</div><div id="vol" class="v">–</div></div>
+<div class="stat"><div class="k">Odhad hmotnosti</div><div id="mass" class="v">–</div></div>
+<div class="stat"><div class="k">Odhad času</div><div id="time" class="v">–</div></div>
+</div>
+</div>
+</section>
+
+<section class="card">
+<div class="card-head"><h2>Výpočet ceny</h2></div>
+<div class="card-body">
+<div class="fields">
+<div class="field"><label>Materiál</label><select id="mat"></select></div>
+<div class="field"><label>Tryska</label><select id="nozzle"></select></div>
+<div class="field"><label>Kvalita</label><select id="quality"><option value="draft">Draft</option><option value="normal" selected>Normal</option><option value="fine">Fine</option></select></div>
+<div class="field"><label>Výška vrstvy</label><input id="layer" type="number" value="0.20" step="0.01"></div>
+<div class="field"><label>Počet stěn</label><input id="walls" type="number" value="2" min="1"></div>
+<div class="field"><label>Infill (%)</label><input id="infill" type="number" value="15" min="0" max="100"></div>
+<div class="field"><label>Počet kusů</label><input id="qty" type="number" value="1" min="1"></div>
+</div>
+<div class="price-box"><div class="price-main"><div><div class="price-title">Odhad ceny zakázky</div><div id="price" class="price-value">– Kč</div></div><button class="primary" id="calcBtn">Přepočítat</button></div></div>
+</div>
+</section>
+</div>
+</div>
+
+<script>
+const statusEl=document.getElementById('status')
+const volEl=document.getElementById('vol')
+const massEl=document.getElementById('mass')
+const timeEl=document.getElementById('time')
+const dimsEl=document.getElementById('dims')
+const priceEl=document.getElementById('price')
+const matEl=document.getElementById('mat')
+const nozzleEl=document.getElementById('nozzle')
+const qualityEl=document.getElementById('quality')
+const layerEl=document.getElementById('layer')
+const wallsEl=document.getElementById('walls')
+const infillEl=document.getElementById('infill')
+const qtyEl=document.getElementById('qty')
+const fileEl=document.getElementById('file')
+const calcBtn=document.getElementById('calcBtn')
+const resetBtn=document.getElementById('resetBtn')
+const wireBtn=document.getElementById('wireBtn')
+
+Object.keys(OWNER.materials).forEach(m=>{let o=document.createElement('option');o.value=m;o.innerText=OWNER.materials[m].label||m;matEl.appendChild(o)})
+Object.keys(OWNER.nozzles).forEach(n=>{let o=document.createElement('option');o.value=n;o.innerText=OWNER.nozzles[n].label;nozzleEl.appendChild(o)})
+
+matEl.value='PETG'
+nozzleEl.value='0.4'
+
+let volume=0,surface=0,dims={x:0,y:0,z:0},loaded=false
+
+const canvas=document.getElementById('viewer')
+const scene=new THREE.Scene()
+scene.background=new THREE.Color(0x020617)
+scene.up.set(0,0,1)
+
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true})
+renderer.setPixelRatio(window.devicePixelRatio)
+
+const camera=new THREE.PerspectiveCamera(45,1,0.1,5000)
+camera.position.set(220,-220,180)
+camera.up.set(0,0,1)
+
+const controls=new THREE.OrbitControls(camera,canvas)
+controls.enableDamping=true
+controls.target.set(0,0,40)
+
+new ResizeObserver(()=>{
+const w=canvas.clientWidth
+const h=canvas.clientHeight
+renderer.setSize(w,h,false)
+camera.aspect=w/h
+camera.updateProjectionMatrix()
+}).observe(canvas)
+
+const hemi=new THREE.HemisphereLight(0xffffff,0x0f172a,1.2)
+scene.add(hemi)
+const dir=new THREE.DirectionalLight(0xffffff,0.9)
+dir.position.set(200,-100,250)
+scene.add(dir)
+
+const grid=new THREE.GridHelper(340,20,0x334155,0x1e293b)
+grid.rotation.x=Math.PI/2
+scene.add(grid)
+scene.add(new THREE.AxesHelper(80))
+
+const bed=new THREE.Mesh(new THREE.PlaneGeometry(340,320),new THREE.MeshBasicMaterial({color:0x020617,side:THREE.DoubleSide}))
+scene.add(bed)
+
+const group=new THREE.Group()
+scene.add(group)
+let currentMesh=null,wire=false
+
+function setStatus(t,type='info'){statusEl.className='status '+type;statusEl.textContent=t}
+function triVol(p1,p2,p3){return p1.dot(p2.clone().cross(p3))/6}
+
+function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera)}
+animate()
+
+function fitCamera(){if(!currentMesh)return;const box=new THREE.Box3().setFromObject(currentMesh);const size=box.getSize(new THREE.Vector3());const center=box.getCenter(new THREE.Vector3());const d=Math.max(size.x,size.y,size.z)*2;camera.position.set(center.x+d,center.y-d,center.z+d*.7);controls.target.copy(center)}
+
+function loadModel(buf){
+const g=new THREE.STLLoader().parse(buf)
+const pos=g.attributes.position
+let v=0,a=0
+const p1=new THREE.Vector3(),p2=new THREE.Vector3(),p3=new THREE.Vector3()
+for(let i=0;i<pos.count;i+=3){p1.fromBufferAttribute(pos,i);p2.fromBufferAttribute(pos,i+1);p3.fromBufferAttribute(pos,i+2);v+=triVol(p1,p2,p3);a+=new THREE.Triangle(p1,p2,p3).getArea()}
+volume=Math.abs(v)/1000
+surface=a/100
+
+g.computeBoundingBox()
+const size=g.boundingBox.getSize(new THREE.Vector3())
+const center=g.boundingBox.getCenter(new THREE.Vector3())
+const min=g.boundingBox.min.clone()
+dims={x:size.x,y:size.y,z:size.z}
+
+group.clear()
+currentMesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xf97316,roughness:.55,metalness:.08,wireframe:wire}))
+currentMesh.position.set(-center.x,-center.y,-min.z)
+group.add(currentMesh)
+
+loaded=true
+volEl.textContent=volume.toFixed(2)+' cm³'
+dimsEl.textContent=`${dims.x.toFixed(1)} × ${dims.y.toFixed(1)} × ${dims.z.toFixed(1)} mm`
+setStatus('Model načten.','ok')
+fitCamera()
+calc()
+}
+
+fileEl.onchange=e=>{
+const f=e.target.files[0]
+if(!f)return
+const r=new FileReader()
+r.onload=ev=>{try{loadModel(ev.target.result)}catch(err){console.error(err);setStatus('STL se nepodařilo načíst.','warn')}}
+r.readAsArrayBuffer(f)
+}
+
+function calc(){
+if(!loaded){
+  priceEl.textContent='– Kč'
+  massEl.textContent='–'
+  timeEl.textContent='–'
+  return
+}
+
+const mat=OWNER.materials[matEl.value]
+const noz=OWNER.nozzles[nozzleEl.value]
+const quality=qualityEl.value
+
+let lh=parseFloat(layerEl.value)||0.2
+let wallsN=parseInt(wallsEl.value)||2
+let inf=Math.min(1,Math.max(0,(parseFloat(infillEl.value)||15)/100))
+let qtyN=Math.max(1, parseInt(qtyEl.value)||1)
+
+wallsN=Math.max(1,wallsN)
+
+if(lh<noz.minLayer){
+  lh=noz.minLayer
+  setStatus('Tryska '+noz.label+' doporučuje min vrstvu '+noz.minLayer+' mm','warn')
+}
+if(lh>noz.maxLayer){
+  lh=noz.maxLayer
+  setStatus('Tryska '+noz.label+' doporučuje max vrstvu '+noz.maxLayer+' mm','warn')
+}
+
+layerEl.value=lh.toFixed(2)
+wallsEl.value=wallsN
+infillEl.value=Math.round(inf*100)
+qtyEl.value=qtyN
+
+const lineWidth=noz.lineWidth
+const maxFlow=mat.maxFlow*noz.maxFlowMul
+
+const shellThick=wallsN*lineWidth
+const topBottomThicknessMm = quality==='fine' ? 1.0 : quality==='draft' ? 0.6 : 0.8
+const topBottomVol = ((dims.x*dims.y)/100) * (topBottomThicknessMm/10) * 2
+const shapeRatio = surface / Math.max(volume, 1)
+const tallFactor = Math.max(1, dims.z / Math.max(dims.x, dims.y, 1))
+const outerPerimeterBoost = Math.min(1.32, 1 + ((shapeRatio - 5) * 0.035) + ((tallFactor - 1) * 0.07))
+
+const shellVol=Math.min(surface*(shellThick/10)*0.85*outerPerimeterBoost,volume*0.93)
+const core=Math.max(volume-shellVol-topBottomVol,0)
+const infillVol=core*inf
+const extruded=shellVol+topBottomVol+infillVol
+
+const grams=extruded*mat.density*0.93
+massEl.textContent=grams.toFixed(1)+' g'
+
+const qualityFactor = quality==='fine' ? 1.22 : quality==='draft' ? 0.84 : 1.0
+const layerFactor = 0.20 / lh
+const perimeterTimeBoost = Math.min(1.38, 1 + ((shapeRatio - 5) * 0.045) + ((tallFactor - 1) * 0.08) + ((wallsN - 2) * 0.06))
+const hours=((extruded*1000)/maxFlow)/3600*OWNER.travelFactor*qualityFactor*layerFactor*perimeterTimeBoost
+
+const totalMin = Math.round(hours * 60)
+const hh = Math.floor(totalMin / 60)
+const mm = totalMin % 60
+
+timeEl.textContent = hh + ' hodin ' + mm + ' minut'
+
+let price=(hours*OWNER.machineRate)+(grams/1000*mat.price)+OWNER.setup
+price*=1+OWNER.margin
+if(price<OWNER.minPrice)price=OWNER.minPrice
+priceEl.textContent=Math.round(price*qtyN).toLocaleString('cs-CZ')+' Kč'
+}
+
+calcBtn.onclick=calc
+resetBtn.onclick=fitCamera
+wireBtn.onclick=()=>{wire=!wire;if(currentMesh)currentMesh.material.wireframe=wire}
+
+setStatus('Podložka je nastavená na 340 × 320 mm.','info')
+
+;[matEl,nozzleEl,qualityEl,layerEl,wallsEl,infillEl,qtyEl].forEach(el=>{
+  el.addEventListener('input',()=>calc())
+  el.addEventListener('change',()=>calc())
+})
+
+</script>
+</body>
+</html>
